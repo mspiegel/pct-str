@@ -153,6 +153,9 @@ impl Display for ByteError {
 #[cfg(feature="std")]
 impl std::error::Error for ByteError {}
 
+#[cfg(not(feature="std"))]
+impl no_std_io::error::Error for ByteError {}
+
 impl<'a> Iterator for Bytes<'a> {
 	type Item = u8;
 
