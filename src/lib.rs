@@ -53,19 +53,43 @@
 //! [`PctString`]: crate::PctString
 //! [`Encoder`]: crate::Encoder
 
-use std::borrow::Borrow;
-use std::hash;
-use std::{
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(test)]
+#[macro_use]
+extern crate std;
+
+cfg_if::cfg_if! {
+	if #[cfg(feature="std")] {
+		use std::io;
+	} else {
+		extern crate alloc;
+
+		use alloc::string::String;
+		use alloc::string::ToString;
+		use alloc::vec::Vec;
+		use alloc::borrow::ToOwned;
+
+		use no_std_io::io as io;
+	}
+}
+
+use core::borrow::Borrow;
+use core::fmt::Write;
+use core::hash;
+use core::ops;
+use core::{
 	cmp::{Ord, Ordering, PartialOrd},
 	fmt::Display,
 };
-use std::{convert::TryFrom, fmt, io, str::FromStr};
+use core::{convert::TryFrom, fmt, str::FromStr};
 
 /// Encoding error.
 ///
 /// Raised when a given input string is not percent-encoded as expected.
-#[derive(Debug, Clone, thiserror::Error)]
-#[error("invalid percent-encoded string")]
+#[cfg_attr(feature = "std", derive(Debug, Clone, thiserror::Error))]
+#[cfg_attr(not(feature = "std"), derive(Debug, Clone))]
+#[cfg_attr(feature = "std", error("invalid percent-encoded string"))]
 pub struct InvalidPctString<T>(pub T);
 
 impl<T> InvalidPctString<T> {
@@ -96,7 +120,7 @@ fn to_digit(b: u8) -> Result<u8, ByteError> {
 /// Bytes iterator.
 ///
 /// Iterates over the encoded bytes of a percent-encoded string.
-pub struct Bytes<'a>(std::slice::Iter<'a, u8>);
+pub struct Bytes<'a>(core::slice::Iter<'a, u8>);
 
 #[derive(Debug, Clone)]
 enum ByteError {
@@ -106,7 +130,14 @@ enum ByteError {
 
 impl From<ByteError> for io::Error {
 	fn from(e: ByteError) -> Self {
-		io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+		cfg_if::cfg_if! {
+			if #[cfg(feature="std")] {
+				io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+			} else {
+				_ = e;
+				io::Error::new(io::ErrorKind::InvalidData, "invalid percent-encoded string")
+			}
+		}
 	}
 }
 
@@ -119,6 +150,7 @@ impl Display for ByteError {
 	}
 }
 
+#[cfg(feature="std")]
 impl std::error::Error for ByteError {}
 
 impl<'a> Iterator for Bytes<'a> {
@@ -143,7 +175,7 @@ impl<'a> Iterator for Bytes<'a> {
 	}
 }
 
-impl<'a> std::iter::FusedIterator for Bytes<'a> {}
+impl<'a> core::iter::FusedIterator for Bytes<'a> {}
 
 /// Untrusted bytes iterator.
 ///
@@ -180,7 +212,7 @@ impl<B: Iterator<Item = u8>> Iterator for UntrustedBytes<B> {
 	}
 }
 
-impl<B: Iterator<Item = u8>> std::iter::FusedIterator for UntrustedBytes<B> {}
+impl<B: Iterator<Item = u8>> core::iter::FusedIterator for UntrustedBytes<B> {}
 
 /// Characters iterator.
 ///
@@ -206,7 +238,7 @@ impl<'a> Iterator for Chars<'a> {
 	}
 }
 
-impl<'a> std::iter::FusedIterator for Chars<'a> {}
+impl<'a> core::iter::FusedIterator for Chars<'a> {}
 
 /// Percent-Encoded string slice.
 ///
@@ -265,7 +297,7 @@ impl PctStr {
 	///
 	/// The input `str` must be a valid percent-encoded string.
 	pub unsafe fn new_unchecked<S: AsRef<[u8]> + ?Sized>(input: &S) -> &PctStr {
-		std::mem::transmute(input.as_ref())
+		core::mem::transmute(input.as_ref())
 	}
 
 	/// Checks that the given iterator produces a valid percent-encoded string.
@@ -579,7 +611,6 @@ impl PctString {
 	/// println!("{}", pct_string.as_str()); // => Hello World%21
 	/// ```
 	pub fn encode<E: Encoder>(src: impl Iterator<Item = char>, encoder: E) -> PctString {
-		use std::fmt::Write;
 
 		let mut buf = String::with_capacity(4);
 		let mut encoded = String::new();
@@ -623,7 +654,7 @@ impl PctString {
 	}
 }
 
-impl std::ops::Deref for PctString {
+impl ops::Deref for PctString {
 	type Target = PctStr;
 
 	#[inline]
